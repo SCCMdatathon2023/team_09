@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: Carrel
+  given-names: Adrien
+  orcid: 0000-0002-0051-2247
+  affiliation: "Imperial College London, UK; CentraleSupelec, France"
+  email: "a.carrel@hotmail.fr"
+  website: https://adriencarrel.com
+- family-names: Bui
+  given-names: Tien
+- family-names: Jia
+  given-names: Yugang
+- family-names: Hansen
+  given-names: Lasse
+- family-names: Archbold
+  given-names: Damien
+- family-names: Douglas
+  given-names: Ivor S.
+- family-names: Morris
+  given-names: Peter E.
+title: ""
+version: 1.0.0
+date-released: 2023-08-05
+url: "https://github.com/SCCMdatathon2023/team_09"

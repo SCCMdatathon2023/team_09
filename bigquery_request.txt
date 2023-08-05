@@ -1,0 +1,23 @@
+%%bigquery df --project sccm-datathon-2023-participant
+
+SELECT cd12.*, cd3.*, cd4.*, cd5.*, cd6.*, cd7.*, fda.*, ped.*, rea.*
+FROM `sccm-discovery.VIRUS.coredata1_2` cd12
+LEFT JOIN `sccm-discovery.VIRUS.coredata3` cd3 on (
+  cd3.icu_id = cd12.icu_id
+)
+LEFT JOIN `sccm-discovery.VIRUS.coredata4` cd4 on (
+  cd4.icu_id = cd12.icu_id
+)
+LEFT JOIN `sccm-discovery.VIRUS.coredata5` cd5 on (
+  cd5.icu_id = cd12.icu_id
+)
+LEFT JOIN `sccm-discovery.VIRUS.coredata6` cd6 on (
+  cd6.icu_id = cd12.icu_id
+)
+LEFT JOIN `sccm-discovery.VIRUS.coredata7` cd7 on (
+  cd7.icu_id = cd12.icu_id
+)
+LEFT JOIN `sccm-discovery.VIRUS.readmission` rea on (
+  rea.icu_id = cd12.icu_id
+)
+LIMIT 1000 -- disable if you want the full dataset

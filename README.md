@@ -3,8 +3,8 @@
 How are social determinants of health factors represented among them? 
 Is there an association between these observed trajectories and race?” 
 
-Adrien Carrel, MSc	Data Scientist	
-Tien “Amy” Bui	Data Scientist	
+> Adrien Carrel, MSc	Data Scientist	
+> Tien “Amy” Bui	Data Scientist	
 Yugang Jia	Data Scientist	
 Lasse Hansen	Data Scientist	 
 Damien Archbold		Clinician

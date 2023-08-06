@@ -76,7 +76,7 @@ project.analyze_clusters()
 If you use piece of code from this project in your research or work, please consider citing it using the following BibTeX entry:
 
 ```bibtex
-[To be completed, and complete the citation information in the CITATION.cff file provided in the repository.]
+Carrel, A., Bui, T., Jia, Y., Hansen, L., Archbold, D., Douglas, I. S., & Morris, P. E. (2023). Analysis of SDOH and COVID-19 Trajectories (Version 1.0.0) [Computer software]. https://github.com/SCCMdatathon2023/team_09
 ```
 
 ## Acknowledgement

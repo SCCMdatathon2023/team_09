@@ -139,6 +139,12 @@ results/
 
 # Data
 data/
+SCCM_Virus_ICU_Elixhauser.txt
+SCCM_Virus_ICU_US_Days_d0-d21.2.csv
+SCCM_Virus_ICU_US_Days_d0-d21.csv
+Initial cohort exploration from yugang
+cohort-figure1-table1
+ressources/
 
 # Others
 todo_presentation.txt

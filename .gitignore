@@ -135,4 +135,10 @@ dmypy.json
 *.out
 
 # Plots
-results_folder/
+results/
+
+# Data
+data/
+
+# Others
+todo_presentation.txt

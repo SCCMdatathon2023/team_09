@@ -1,6 +1,6 @@
 %%bigquery df --project sccm-datathon-2023-participant
 
-SELECT cd12.*, cd3.*, cd4.*, cd5.*, cd6.*, cd7.*, fda.*, ped.*, rea.*
+SELECT cd12.*, cd3.*, cd4.*, cd5.*, cd6.*, cd7.*, rea.*
 FROM `sccm-discovery.VIRUS.coredata1_2` cd12
 LEFT JOIN `sccm-discovery.VIRUS.coredata3` cd3 on (
   cd3.icu_id = cd12.icu_id
@@ -21,3 +21,9 @@ LEFT JOIN `sccm-discovery.VIRUS.readmission` rea on (
   rea.icu_id = cd12.icu_id
 )
 LIMIT 1000 -- disable if you want the full dataset
+
+
+
+
+-- count: 92244
+SELECT COUNT(DISTINCT cd12.icu_id) FROM `sccm-discovery.VIRUS.coredata1_2` cd12;

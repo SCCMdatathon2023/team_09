@@ -1,7 +1,5 @@
 # Team 9 SCCM Datathon 2023 - COVID Trajectories Analysis
 
-<p align="center"><img src="https://github.com/SCCMdatathon2023/team_09/blob/main/logo.png?raw=true" alt="team9_logo" width="600"/></p>
-
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 ## Table of Contents
@@ -18,11 +16,11 @@
 
 ## Introduction
 
-TODO
+Here is our code to run experiments to analyse Social Determinants of Health associated with COVID-19 trajectory.
 
 If you find this project interesting, we would appreciate your support by leaving a star ⭐ on this [GitHub repository](https://github.com/SCCMdatathon2023/team_09).
 
-**Author:** TODO
+**Author:** Adrien Carrel, MSc, Meng; Tien "Amy" Bui; Yugang Jia; Lasse Hansen; Damien Archbold; Ivor S. Douglas, MD, FRCP (UK); Peter E. Morris, MD
 
 ## Installation
 
@@ -36,6 +34,20 @@ git clone https://github.com/SCCMdatathon2023/team_09
 
 This project requires the following dependencies:
 
+fastdtw>=0.3.4
+hdbscan>=0.8.33
+kaleido>=0.1.0.post1
+matplotlib>=3.7.2
+nltk>=3.8.1
+numpy>=1.24.4
+pandas>=2.0.3
+plotly>=5.15.0
+scikit_learn>=1.3.0
+scipy>=1.11.1
+tableone>=0.8.0
+tqdm>=4.65.0
+~aleido>=0.2.1
+
 Please make sure you have the required dependencies installed before using the code in this project.
 
 You can install all of them by running the command:
@@ -44,9 +56,11 @@ You can install all of them by running the command:
 pip install -r requirements.txt
 ```
 
+Some other packages may be required.
+
 ## Usage
 
-To use our project or replicate the results, run our notebook team9.ipynb, or you can simply run the following Python commands:
+To use our project or replicate the results, run our different python script or you can simply run the Python commands individually. For example, for the timeseries clustering project:
 
 ```python
 config = {
@@ -54,8 +68,7 @@ config = {
 }
 project = Team9(**config)
 project.run_clustering()
-
-# Then, the plotting methods that you want from the 'project' object.
+project.analyze_clusters()
 ```
 
 ## Citation
@@ -68,7 +81,7 @@ If you use piece of code from this project in your research or work, please cons
 
 ## Acknowledgement
 
-Logo created by me using the icon: "" icon by XXX from Noun Project CC BY 3.0.
+SCCM Discovery Datathon 2023, the mentors and the organizers for helping us out during these two days.
 
 ## License
 

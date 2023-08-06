@@ -30,10 +30,11 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.spatial.distance import euclidean
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 from sklearn.model_selection import GroupShuffleSplit
 from nltk.cluster.kmeans import KMeansClusterer
 from fastdtw import fastdtw
+from hdbscan import HDBSCAN
 
 
 warnings.filterwarnings(
@@ -73,6 +74,125 @@ def euclidean2D(x: array_like, y: array_like) -> np.float64:
         if (np.isnan(u).sum() == 0) and (np.isnan(v).sum() == 0):
             res += euclidean(u, v)
     return res
+
+
+class CustomHDBSCAN:
+    """Custom HDBSCAN class that allows to use precomputed distance matrix"""
+
+    def __init__(self, verbose: bool = True) -> None:
+        """Initialize the class
+
+        Args:
+            verbose (bool, optional): whether to print the progress or not. Defaults to True.
+        """
+        self.verbose = verbose
+        self.clusterer = HDBSCAN(metric="precomputed")
+        self.distance_matrix = None  # initial distance matrix on train dataset to None
+        self.train_set = None  # initial train set to None
+        self.train_labels = None  # initial train labels to None
+        self.nb_clusters = None  # initial number of clusters to None
+        self.calculated_means = None  # initial means to None
+        self.shift = None  # initial shift to None
+
+    def print(self, msg: str) -> None:
+        """Print function for the clusterer.
+
+        Args:
+            msg (str): message to print
+        """
+        if self.verbose:
+            print(msg)
+
+    def is_trained(self) -> bool:
+        """Check if the clusterer is trained
+
+        Returns:
+            bool: True if the clusterer is trained, False otherwise
+        """
+        return self.distance_matrix is not None
+
+    def calculate_distance_matrix(self, X: array_like) -> np.ndarray:
+        """Calculate the Dynamic Time Warping distance matrix between the timeseries
+
+        Args:
+            X (array_like): timeseries
+
+        Returns:
+            np.ndarray: distance matrix
+        """
+        self.print("Calculating distance matrix ...")
+        res = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
+        for i in range(X.shape[0]):
+            for j in range(i, X.shape[0]):
+                res[i, j] = fdtw(X[i], X[j])
+                res[j, i] = res[i, j]
+        return res
+
+    def fit_predict(self, X: array_like) -> np.ndarray:
+        """Fit the clusterer
+
+        Args:
+            X (array_like): distance matrix
+
+        Returns:
+            np.ndarray: predicted clusters
+        """
+        self.print(f"Fitting the clusterer on {len(X)} samples ...")
+        self.train_set = X  # store the train set
+        distance_matrix = self.calculate_distance_matrix(X)
+        self.distance_matrix = distance_matrix  # store the distance matrix
+        self.clusterer.fit(distance_matrix)
+        self.train_labels = self.clusterer.labels_  # store the train clusters
+        self.nb_clusters = len(
+            set(list(self.clusterer.labels_))
+        )  # store the nb clusters
+        self.shift = -min(self.train_labels)  # store the shift
+        return self.train_labels
+
+    def predict(self, X: array_like) -> np.ndarray:
+        """Predict the clusters of the test set
+
+        Args:
+            X (array_like): test/valid set
+
+        Returns:
+            np.ndarray: predicted clusters
+        """
+        self.print(f"Predicting the clusters on {len(X)} samples ...")
+        res = np.zeros(X.shape[0], dtype=np.int32)
+        for i in range(X.shape[0]):
+            min_dist = np.inf
+            for j in range(self.train_set.shape[0]):
+                dist = fdtw(X[i], self.train_set[j])
+                if dist < min_dist:
+                    min_dist = dist
+                    res[i] = self.train_labels[j]
+        return res
+
+    def means(self) -> np.ndarray:
+        """Calculate the cluster means
+
+        Returns:
+            np.ndarray: cluster means
+        """
+        if self.calculated_means is not None:
+            return self.calculated_means
+        self.print("Calculating the cluster means ...")
+        res = np.zeros(
+            (
+                self.nb_clusters + 1,
+                self.train_set.shape[1],
+                self.train_set.shape[2],
+            )
+        )
+        for i in range(self.train_set.shape[0]):
+            res[self.train_labels[i] + self.shift] += self.train_set[i]
+        for i in range(res.shape[0]):
+            div = np.sum(self.train_labels == (i - self.shift))
+            if div:
+                res[i] /= div
+        self.calculated_means = res
+        return res
 
 
 class PlotClass(ABC):
@@ -174,9 +294,13 @@ class PlotClass(ABC):
             if (len(self.feat_timevarying) % rows) == 0
             else (len(self.feat_timevarying) // rows) + 1
         )
+        if self.is_supervised:
+            rng = self.K_time
+        else:
+            rng = self.km_time.nb_clusters
         fig = make_subplots(rows=rows, cols=cols, subplot_titles=self.feat_timevarying)
         for feat_id, _ in enumerate(self.feat_timevarying):
-            for cluster_id in range(self.K_time):
+            for cluster_id in range(rng):
                 ts = np.array(self.km_time.means()[cluster_id])[:, feat_id]
                 # TODO CHANGE X?
                 fig.add_trace(
@@ -196,7 +320,9 @@ class PlotClass(ABC):
         self.save_image(fig, "cluster_mean_time_varying_features.png")
 
         # Static features + outcome
-        feat_to_plot = self.feat_static + [self.label]
+        feat_to_plot = self.feat_static
+        if self.label is not None:
+            feat_to_plot.append(self.label)
         subplot_titles = [
             f"{dataset} {x}"
             for dataset in ("Train", "Valid", "Test")
@@ -208,6 +334,11 @@ class PlotClass(ABC):
         df_train = self.df_train.copy(deep=True).groupby(by=[self.id_name]).first()
         df_valid = self.df_valid.copy(deep=True).groupby(by=[self.id_name]).first()
         df_test = self.df_test.copy(deep=True).groupby(by=[self.id_name]).first()
+        if self.cap_datasets is not None:
+            df_train = df_train[: self.cap_datasets]
+            df_valid = df_valid[: self.cap_datasets]
+            df_test = df_test[: self.cap_datasets]
+        shift = self.km_time.shift
         df_train["cluster_ts"] = self.tr_clusters
         df_valid["cluster_ts"] = self.va_clusters
         df_test["cluster_ts"] = self.te_clusters
@@ -217,16 +348,16 @@ class PlotClass(ABC):
                 .union(df_valid[feat].to_list())
                 .union(df_test[feat].to_list())
             )
-            for cluster_id in range(self.K_time):
+            for cluster_id in range(rng):
                 # train
-                df_filtered = df_train[df_train["cluster_ts"] == cluster_id]
+                df_filtered = df_train[df_train["cluster_ts"] == (cluster_id - shift)]
                 y = [len(df_filtered[df_filtered[feat] == x]) for x in possible_values]
                 if len(possible_values) >= threshold_histogram:
                     fig.add_trace(
                         go.Histogram(
                             x=df_filtered[feat].to_numpy(),
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=(feat_id == 0),
                         ),
                         row=1,
@@ -238,21 +369,21 @@ class PlotClass(ABC):
                             x=possible_values,
                             y=y,
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=(feat_id == 0),
                         ),
                         row=1,
                         col=(feat_id + 1),
                     )
                 # valid
-                df_filtered = df_valid[df_valid["cluster_ts"] == cluster_id]
+                df_filtered = df_valid[df_valid["cluster_ts"] == (cluster_id - shift)]
                 y = [len(df_filtered[df_filtered[feat] == x]) for x in possible_values]
                 if len(possible_values) >= threshold_histogram:
                     fig.add_trace(
                         go.Histogram(
                             x=df_filtered[feat].to_numpy(),
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=False,
                         ),
                         row=2,
@@ -264,21 +395,21 @@ class PlotClass(ABC):
                             x=possible_values,
                             y=y,
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=False,
                         ),
                         row=2,
                         col=(feat_id + 1),
                     )
                 # test
-                df_filtered = df_test[df_test["cluster_ts"] == cluster_id]
+                df_filtered = df_test[df_test["cluster_ts"] == (cluster_id - shift)]
                 y = [len(df_filtered[df_filtered[feat] == x]) for x in possible_values]
                 if len(possible_values) >= threshold_histogram:
                     fig.add_trace(
                         go.Histogram(
                             x=df_filtered[feat].to_numpy(),
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=False,
                         ),
                         row=3,
@@ -290,7 +421,7 @@ class PlotClass(ABC):
                             x=possible_values,
                             y=y,
                             marker_color=self.get_color(cluster_id),
-                            name=f"Cluster {cluster_id}",
+                            name=f"Cluster {cluster_id - shift}",
                             showlegend=False,
                         ),
                         row=3,
@@ -311,14 +442,15 @@ class Team9(PlotClass):
     def __init__(
         self,
         id_name: str,
-        label: str,
         feat_timevarying: List[str],
         feat_static: List[str],
-        metric: Union[str, Callable[[array_like, array_like], float]],
+        metric: Union[str, Callable[[array_like, array_like], float]] = "custom_dtw",
         K_time: int = 5,
+        scaler: Optional[Union[Callable[[pd.DataFrame], pd.DataFrame], str]] = None,
         fillna_strategy: Optional[
             Union[Callable[[pd.DataFrame], pd.DataFrame], str, float]
         ] = "fill_forward",
+        label: Optional[str] = None,
         tte_name: Optional[str] = None,
         time_name: Optional[str] = None,
         seed: int = 42,
@@ -326,24 +458,29 @@ class Team9(PlotClass):
         is_bigquery: bool = False,
         query_or_path: str = "./",
         results_folder: str = "results",
+        verbose: bool = True,
+        cap_datasets: Optional[int] = None,
     ) -> None:
         """Initialize the Team9 class object with our general configuration
 
         Args:
             id_name (str): hospital admission id column name
-            label (str): label column name
             feat_timevarying (List[str]): List of time series features.
             feat_static (List[str]): List of static features.
-            metric (Union[str, Callable[[array_like, array_like], float]], optional): metric to be used when computing the clusters. It's either the name of a distance to be used in a KMeans clustering or it is a function. Defaults to "dtw".
+            metric (Union[str, Callable[[array_like, array_like], float]], optional): metric to be used when computing the clusters. It's either the name of a distance to be used in a KMeans clustering or it is a function. Defaults to "custom_dtw".
             K_time (int, optional): number of clusters for supervised clustering methods. Defaults to 5.
+            scaler (Optional[Union[Callable[[pd.DataFrame], pd.DataFrame], str]], optional): Scaler to use. Defaults to None.
             fillna_strategy (Optional[Union[Callable[[pd.DataFrame], pd.DataFrame], str, float]], optional): Value or method to fill NaN values with. Defaults to "fill_forward.
-            tte_name (Optional[str]): time to event column name (date covid diagnosis). Defaults to None.
-            time_name (Optional[str]): name of the time column. Defaults to None.
+            label (Optional[str], optional): label column name. Defaults to None.
+            tte_name (Optional[str], optional): time to event column name (date covid diagnosis). Defaults to None.
+            time_name (Optional[str], optional): name of the time column. Defaults to None.
             seed (int, optional): Random seed to allow reproducibility. Defaults to 42.
             test_size (float, optional): Test size for train, valid, test split. Defaults to 0.2.
             is_bigquery (bool, optional): if True, the query_or_path is an SQL query, otherwise it is a path. Defaults to False.
             query_or_path (str, optional): bigquery SQL query or path. Defaults to "./".
-            results_folder (str, optional): name of the folder to save the results
+            results_folder (str, optional): name of the folder to save the results. Defaults to "results".
+            verbose (bool, optional): whether to print information or not. Defaults to True.
+            cap_datasets (Optional[int], optional): cap the size of the datasets if not None. Defaults to None.
         """
         # Initialize the parent PlotClass class
         super().__init__(results_folder)
@@ -351,11 +488,7 @@ class Team9(PlotClass):
         # General parameters
         self.seed = seed
         self.test_size = test_size
-
-        # Load the dataset
-        self.is_bigquery = is_bigquery
-        self.query_or_path = query_or_path
-        self.load_dataset(self.is_bigquery, self.query_or_path)
+        self.verbose = verbose
 
         # Initialize dataset specific parameters
         self.id_name = id_name
@@ -365,8 +498,12 @@ class Team9(PlotClass):
         self.fillna_strategy = fillna_strategy
         self.tte_name = tte_name
         self.time_name = time_name
+        self.scaler = scaler
+        self.cap_datasets = cap_datasets
 
-        columns_to_add = [self.id_name, self.label]
+        columns_to_add = [self.id_name]
+        if self.label is not None:
+            columns_to_add.append(self.label)
         if self.tte_name is not None:
             columns_to_add.append(self.tte_name)
         if self.time_name is not None:
@@ -379,6 +516,42 @@ class Team9(PlotClass):
         self.metric = metric
         self.K_time = K_time
 
+        # Load the dataset
+        self.is_bigquery = is_bigquery
+        self.query_or_path = query_or_path
+        self.load_dataset(self.is_bigquery, self.query_or_path)
+
+    def __repr__(self) -> str:
+        """Print the object
+
+        Returns:
+            str: object representation
+        """
+        return f"{self.__clas__.__name__}(id_name={self.id_name}, feat_timevarying={self.feat_timevarying}, feat_static={self.feat_static}, metric={self.metric}, K_time={self.K_time}, scaler={self.scaler}, fillna_strategy={self.fillna_strategy}, label={self.label}, tte_name={self.tte_name}, time_name={self.time_name}, seed={self.seed}, test_size={self.test_size}, is_bigquery={self.is_bigquery}, query_or_path={self.query_or_path}, results_folder={self.results_folder}, verbose={self.verbose})"
+
+    def print(self, msg: str) -> None:
+        """Print the object"""
+        if self.verbose:
+            print(msg)
+
+    def general_preprocessing(self, df: pd.DataFrame) -> pd.DataFrame:
+        """General preprocessing of the dataset.
+
+        Args:
+            df (pd.DataFrame): dataset
+
+        Returns:
+            pd.DataFrame: preprocessed dataset
+        """
+        # Label encoder static features
+        le_dic = {}
+        for feature in self.feat_static:
+            le = LabelEncoder()
+            df[feature] = le.fit_transform(df[feature])
+            le_dic[feature] = le
+        self.label_encoders = le_dic  # save the label encoder(s)
+        return df
+
     def load_dataset(
         self, is_bigquery: bool = False, query_or_path: str = "./"
     ) -> None:
@@ -389,11 +562,13 @@ class Team9(PlotClass):
             query_or_path (str): bigquery SQL query or path. Defaults to "./".
         """
         if is_bigquery:
-            # TODO
             df = None
+            raise NotImplementedError("Bigquery not implemented yet.")
         else:
             df = pd.read_csv(query_or_path)
-        self.df  # save the dataset
+        # Preprocess the general dataset
+        df = self.general_preprocessing(df)
+        self.df = df  # save the dataset
 
     def fillna(
         self,
@@ -431,7 +606,7 @@ class Team9(PlotClass):
     def process_dataset(
         self,
         dataset: pd.DataFrame,
-        scaler: Optional[Union[str, Any]] = "normal",
+        scaler: Optional[Union[str, Any]] = None,
     ) -> Tuple[
         Tuple[array_like, array_like, array_like, array_like, array_like],
         Tuple[List[str], List[str]],
@@ -443,7 +618,7 @@ class Team9(PlotClass):
 
         Args:
             dataset (pd.DataFrame): train, valid or test COVID dataset
-            scaler (Optional[str], optional): Method to scale/normalize the data or scaler object. Could be None. Defaults to "normal".
+            scaler (Optional[str], optional): Method to scale/normalize the data or scaler object. Could be None. Defaults to None.
 
         Returns:
             Tuple[
@@ -464,6 +639,7 @@ class Team9(PlotClass):
             3) tuple with:
                 - ids of timevarying features that are binary
                 - ids of timevarying features that are continuous (>3 different values)
+                "delta" not included
             4) the scaler, either the already fitted one provided or the
                 one that has been fitted during the preprocessing, or None if
                 no scaling applied
@@ -501,7 +677,10 @@ class Team9(PlotClass):
         )
 
         data_y = np.zeros([num_samples, 1])
-        data_y[:, 0] = np.asarray(df.drop_duplicates(subset=[self.id_name])[self.label])
+        if self.label is not None:
+            data_y[:, 0] = np.asarray(
+                df.drop_duplicates(subset=[self.id_name])[self.label]
+            )
 
         data_tte = np.zeros([num_samples, 1])
         if self.tte_name is not None:
@@ -535,21 +714,21 @@ class Team9(PlotClass):
                 else np.zeros(len(tmp))
             )
 
-        data_xt[:, :, 0] = (
-            data_xt[:, :, 0] / data_xt[:, :, 0].max()
-        )  # min-max on delta's
-
-        # Add delta time to the list of time varying features
-        self.feat_timevarying = ["delta"] + self.feat_timevarying
+        if self.time_name is not None:
+            data_xt[:, :, 0] = (
+                data_xt[:, :, 0] / data_xt[:, :, 0].max()
+            )  # min-max on delta's
 
         # Split the timevarying features into the binary and the "continuous" ones
         xt_bin_list, xt_con_list = [], []  # contains the ids
 
         for f_idx, feat in enumerate(self.feat_timevarying):
+            if feat == "delta":
+                continue
             if len(df[feat].unique()) == 2:
-                xt_bin_list += [f_idx]
+                xt_bin_list += [f_idx + 1]
             else:
-                xt_con_list += [f_idx]
+                xt_con_list += [f_idx + 1]
 
         return (
             (data_xs, data_xt, data_time, data_y, data_tte),
@@ -649,7 +828,7 @@ class Team9(PlotClass):
             (_, _),
             (xt_bin_list, xt_con_list),
             scaler,
-        ) = self.process_dataset(df_train_c, scaler=None)
+        ) = self.process_dataset(df_train_c, scaler=self.scaler)
 
         # Preprocess valid
         self.print("Preprocess valid")
@@ -669,6 +848,30 @@ class Team9(PlotClass):
             _,
         ) = self.process_dataset(df_test_c, scaler=scaler)
 
+        if self.cap_datasets is not None:
+            if not (isinstance(self.cap_datasets, int) and self.cap_datasets > 0):
+                raise ValueError(
+                    f"The parameter 'cap_datasets' must be a positive integer, not {self.cap_datasets}."
+                )
+            tr_data_s = tr_data_s[: self.cap_datasets]
+            va_data_s = va_data_s[: self.cap_datasets]
+            te_data_s = te_data_s[: self.cap_datasets]
+            tr_data_t = tr_data_t[: self.cap_datasets]
+            va_data_t = va_data_t[: self.cap_datasets]
+            te_data_t = te_data_t[: self.cap_datasets]
+            tr_time = tr_time[: self.cap_datasets]
+            va_time = va_time[: self.cap_datasets]
+            te_time = te_time[: self.cap_datasets]
+            tr_label = tr_label[: self.cap_datasets]
+            va_label = va_label[: self.cap_datasets]
+            te_label = te_label[: self.cap_datasets]
+            tr_tte = tr_tte[: self.cap_datasets]
+            va_tte = va_tte[: self.cap_datasets]
+            te_tte = te_tte[: self.cap_datasets]
+
+        # Add delta time to the list of time varying features
+        self.feat_timevarying = ["delta"] + self.feat_timevarying
+
         ###########
         # Clustering
         ###########
@@ -678,16 +881,22 @@ class Team9(PlotClass):
                 km_time = KMeansClusterer(
                     self.K_time, distance=euclidean2D, avoid_empty_clusters=True
                 )
+                self.is_supervised = True
             elif self.metric == "dtw":
                 km_time = KMeansClusterer(
                     self.K_time, distance=fdtw, avoid_empty_clusters=True
                 )
+                self.is_supervised = True
+            elif self.metric == "custom_dtw":
+                km_time = CustomHDBSCAN(self.verbose)
+                self.is_supervised = False
             else:
                 raise ValueError(f"Unknown clustering metric: {self.metric}")
         else:  # metric is a callable
             km_time = KMeansClusterer(
                 self.K_time, distance=self.metric, avoid_empty_clusters=True
             )
+            self.is_supervised = True
 
         # Train the clustering algorithm
         self.print("Training dynamic clustering ...")
@@ -697,11 +906,15 @@ class Team9(PlotClass):
 
         # Predictions on validation set
         self.print("Predicting validation clusters ...")
+        top = perf_counter()
         va_clusters = self.classify(km_time, va_data_t)
+        self.print(f"Predictions took: {round(perf_counter() - top, 3)} s")
 
         # Predictions on test set
         self.print("Predicting test clusters ...")
+        top = perf_counter()
         te_clusters = self.classify(km_time, te_data_t)
+        self.print(f"Predictions took: {round(perf_counter() - top, 3)} s")
 
         # Add the cluster to the timeseries
         self.feat_static = self.feat_static + ["cluster_ts"]

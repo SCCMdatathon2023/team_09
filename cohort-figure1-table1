@@ -37,7 +37,7 @@ WITH c0 AS (
   WHERE c12.US_Non_US = 'US' AND c12.age >= 18 AND c12.age < 100 AND c12.admitted_to_icu = 1
 ) 
 
-SELECT c0.icu_id, 
+SELECT c0.icu_id, medications___1 as Antifungal, medications___2 as Antiviral, medications___3 as Azithromycin, medications___4 as Corticosteroid, medications___6 as Hydroxychlorquine, medications___8 as Anticoagulants , medications___9 as Antibacterials, medications___16 as NSAIDs, other_medications
 CASE WHEN c12.age >= 18 and age < 35 then '18-35'
              WHEN age < 50 then '35-50'
              WHEN age < 65 THEN '50-65'
@@ -49,4 +49,4 @@ CASE WHEN c12.age >= 18 and age < 35 then '18-35'
 FROM c0 
 LEFT JOIN `sccm-discovery.VIRUS.coredata1_2` AS c12 ON c0.icu_id = c12.icu_id
 LEFT JOIN `sccm-discovery.VIRUS.coredata7` AS c7 ON c0.icu_id = c7.icu_id
-LEFT join `sccm-discovery.VIRUS.coredata6` as c6 ON c0.icu_id = c6.icu_id;
+LEFT JOIN `sccm-discovery.VIRUS.coredata6` as c6 ON c0.icu_id = c6.icu_id;
